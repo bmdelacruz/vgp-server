@@ -12,7 +12,7 @@ prost = "0.6"
 async-stream = "0.2"
 futures-core = "0.3"
 futures-util = "0.3"
-tokio = { version = "0.2", features = ["macros", "stream"] }
+tokio = { version = "0.2", features = ["macros", "stream", "signal"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 uinput = "0.1.3"

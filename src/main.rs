@@ -1,3 +1,4 @@
+use futures_util::FutureExt;
 use simple_logger::SimpleLogger;
 use tonic::transport::Server;
 
@@ -13,9 +14,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = "[::1]:50000".parse()?;
 
+    let shutdown_signal = tokio::signal::ctrl_c().map(|_| ());
+
     Server::builder()
         .add_service(game_pad_service::create())
-        .serve(addr)
+        .serve_with_shutdown(addr, shutdown_signal)
         .await?;
 
     Ok(())
