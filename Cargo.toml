@@ -5,6 +5,8 @@ authors = ["Bryan Dela Cruz <bryanmdlx@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+log = "0.4.11"
+simple_logger = "1.11.0"
 tonic = "0.3"
 prost = "0.6"
 async-stream = "0.2"
