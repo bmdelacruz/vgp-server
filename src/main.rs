@@ -9,10 +9,10 @@ mod proto;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     SimpleLogger::new()
-        .with_level(log::LevelFilter::Debug)
+        .with_level(log::LevelFilter::Trace)
         .init()?;
 
-    let addr = "[::1]:50000".parse()?;
+    let addr = "0.0.0.0:50000".parse()?;
 
     let shutdown_signal = tokio::signal::ctrl_c().map(|_| ());
 

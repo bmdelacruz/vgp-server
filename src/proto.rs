@@ -1,14 +1,11 @@
-tonic::include_proto!("com.bmdelacruz.vgp");
+tonic::include_proto!("gamepad");
 
 pub mod service_prelude {
-    pub use super::game_pad_service_server::{GamePadService, GamePadServiceServer};
-    pub use super::{Input, Output};
+    pub use super::game_pad_server::{GamePad, GamePadServer};
+    pub use super::{CheckRequest, CheckResponse, InputData, OutputData};
 }
 
 pub mod io_prelude {
-    pub use super::input::{
-        button::{State as ButtonState, Type as ButtonType},
-        position::Type as PositionType,
-        Control,
-    };
+    pub use super::input_data::Control;
+    pub use super::{ButtonState, ButtonType, ThumbStickType};
 }

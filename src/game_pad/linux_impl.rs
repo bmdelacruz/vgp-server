@@ -6,16 +6,17 @@ use uinput::event::{
         DPad as DPadKeys, GamePad as GamePadKeys,
     },
     Event::{Absolute, Controller},
-    Position, Press, Release,
+    Press, Release,
 };
 use uinput::Device;
 
 pub struct GamePad {
     device: Device,
+    abs_val: f32,
 }
 
 impl GamePad {
-    pub fn create() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn create(abs_val: f32) -> Result<Self, Box<dyn std::error::Error>> {
         let device = uinput::default()?
             .name("virtual gamepad (vpg)")?
             .vendor(0x0bdc)
@@ -60,7 +61,7 @@ impl GamePad {
             .flat(15)
             .create()?;
 
-        Ok(GamePad { device })
+        Ok(GamePad { device, abs_val })
     }
 
     pub fn control(&mut self, data: Control) -> Result<(), Box<dyn std::error::Error>> {
@@ -103,14 +104,24 @@ impl GamePad {
                     }
                 }
             }
-            Control::Position(p) => {
-                let position_type =
-                    PositionType::from_i32(p.r#type).ok_or("The `position.type` is invalid!")?;
-                match position_type {
-                    PositionType::LeftX => self.apply_position(&Positions::X, p.position)?,
-                    PositionType::LeftY => self.apply_position(&Positions::Y, p.position)?,
-                    PositionType::RightX => self.apply_position(&Positions::RX, p.position)?,
-                    PositionType::RightY => self.apply_position(&Positions::RY, p.position)?,
+            Control::ThumbStick(t) => {
+                let thumb_stick_type = ThumbStickType::from_i32(t.r#type)
+                    .ok_or("The `thumb_stick.type` is invalid!")?;
+                match thumb_stick_type {
+                    ThumbStickType::LeftThumbStick => {
+                        self.device
+                            .position(&Positions::X, (t.x * self.abs_val) as i32)?;
+                        self.device
+                            .position(&Positions::Y, (t.y * self.abs_val) as i32)?;
+                        self.device.synchronize()?;
+                    }
+                    ThumbStickType::RightThumbStick => {
+                        self.device
+                            .position(&Positions::RX, (t.x * self.abs_val) as i32)?;
+                        self.device
+                            .position(&Positions::RY, (t.y * self.abs_val) as i32)?;
+                        self.device.synchronize()?;
+                    }
                 }
             }
         }
@@ -142,17 +153,6 @@ impl GamePad {
             ButtonState::Pressed => self.press_key(event)?,
             ButtonState::Released => self.release_key(event)?,
         }
-
-        Ok(())
-    }
-
-    fn apply_position<T: Position>(
-        &mut self,
-        event: &T,
-        value: i32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.device.position(event, value)?;
-        self.device.synchronize()?;
 
         Ok(())
     }

@@ -1,18 +1,25 @@
 use futures_util::StreamExt;
 use tonic::{Request, Response, Status, Streaming};
 
-use crate::game_pad::GamePad;
+use crate::game_pad::GamePad as GamePadDevice;
 use crate::proto::service_prelude::*;
 
 #[derive(Debug, Default)]
-pub struct GamePadServiceImpl;
+pub struct GamePadImpl;
 
 #[tonic::async_trait]
-impl GamePadService for GamePadServiceImpl {
-    async fn instantiate_game_pad(
+impl GamePad for GamePadImpl {
+    async fn check(
         &self,
-        request: Request<Streaming<Input>>,
-    ) -> Result<Response<Output>, Status> {
+        _request: Request<CheckRequest>,
+    ) -> Result<Response<CheckResponse>, Status> {
+        Ok(Response::new(CheckResponse {}))
+    }
+
+    async fn instantiate(
+        &self,
+        request: Request<Streaming<InputData>>,
+    ) -> Result<Response<OutputData>, Status> {
         let remote_addr = request.remote_addr();
 
         log::info!(
@@ -22,7 +29,7 @@ impl GamePadService for GamePadServiceImpl {
 
         let mut stream = request.into_inner();
 
-        let mut game_pad = GamePad::create().map_err(|_e| {
+        let mut game_pad = GamePadDevice::create(512f32).map_err(|_e| {
             Status::internal("An error occurred while trying to create game pad device.")
         })?;
 
@@ -49,10 +56,10 @@ impl GamePadService for GamePadServiceImpl {
             remote_addr
         );
 
-        Ok(Response::new(Output {}))
+        Ok(Response::new(OutputData {}))
     }
 }
 
-pub fn create() -> GamePadServiceServer<GamePadServiceImpl> {
-    GamePadServiceServer::new(GamePadServiceImpl::default())
+pub fn create() -> GamePadServer<GamePadImpl> {
+    GamePadServer::new(GamePadImpl::default())
 }
