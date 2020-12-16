@@ -1,4 +1,6 @@
 use futures_util::StreamExt;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tonic::{Request, Response, Status, Streaming};
 
 use crate::game_pad::GamePad as GamePadDevice;
@@ -29,9 +31,10 @@ impl GamePad for GamePadImpl {
 
         let mut stream = request.into_inner();
 
-        let mut game_pad = GamePadDevice::create(512f32).map_err(|_e| {
+        let game_pad = GamePadDevice::create(512f32).map_err(|_e| {
             Status::internal("An error occurred while trying to create game pad device.")
         })?;
+        let game_pad = Arc::new(Mutex::new(game_pad));
 
         log::info!("Instantiated game pad for client ({:?}).", remote_addr);
 
@@ -46,7 +49,7 @@ impl GamePad for GamePadImpl {
                 remote_addr
             );
 
-            game_pad.control(data).map_err(|_e| {
+            game_pad.lock().await.control(data).map_err(|_e| {
                 Status::internal("An error occurred while trying to control the game pad device.")
             })?;
         }

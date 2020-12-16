@@ -1,172 +1,167 @@
+use std::convert::TryFrom;
+
 use crate::proto::io_prelude::*;
-use uinput::event::{
-    absolute::{Absolute::Position as PositionEvent, Position as Positions},
-    controller::{
-        Controller::{DPad as DPadEvent, GamePad as GamePadEvent},
-        DPad as DPadKeys, GamePad as GamePadKeys,
-    },
-    Event::{Absolute, Controller},
-    Press, Release,
+use evdev_rs::{
+    enums::{BusType, EventCode, EventType, EV_ABS, EV_FF, EV_KEY, EV_SYN},
+    AbsInfo, InputEvent, TimeVal,
 };
-use uinput::Device;
+use evdev_rs::{Device, UInputDevice};
 
 pub struct GamePad {
-    device: Device,
+    _device: Device,
+    input_device: UInputDevice,
     abs_val: f32,
 }
 
+unsafe impl Send for GamePad {}
+
 impl GamePad {
     pub fn create(abs_val: f32) -> Result<Self, Box<dyn std::error::Error>> {
-        let device = uinput::default()?
-            .name("virtual gamepad (vpg)")?
-            .vendor(0x0bdc)
-            .product(0x4853)
-            .version(1)
-            .bus(0x06) // virtual bus
-            .event(Controller(DPadEvent(DPadKeys::Up)))?
-            .event(Controller(DPadEvent(DPadKeys::Down)))?
-            .event(Controller(DPadEvent(DPadKeys::Left)))?
-            .event(Controller(DPadEvent(DPadKeys::Right)))?
-            .event(Controller(GamePadEvent(GamePadKeys::A)))?
-            .event(Controller(GamePadEvent(GamePadKeys::B)))?
-            .event(Controller(GamePadEvent(GamePadKeys::X)))?
-            .event(Controller(GamePadEvent(GamePadKeys::Y)))?
-            .event(Controller(GamePadEvent(GamePadKeys::TL)))?
-            .event(Controller(GamePadEvent(GamePadKeys::TR)))?
-            .event(Controller(GamePadEvent(GamePadKeys::TL2)))?
-            .event(Controller(GamePadEvent(GamePadKeys::TR2)))?
-            .event(Controller(GamePadEvent(GamePadKeys::ThumbL)))?
-            .event(Controller(GamePadEvent(GamePadKeys::ThumbR)))?
-            .event(Controller(GamePadEvent(GamePadKeys::Select)))?
-            .event(Controller(GamePadEvent(GamePadKeys::Start)))?
-            .event(Absolute(PositionEvent(Positions::X)))?
-            .min(-512)
-            .max(512)
-            .fuzz(0)
-            .flat(15)
-            .event(Absolute(PositionEvent(Positions::Y)))?
-            .min(-512)
-            .max(512)
-            .fuzz(0)
-            .flat(15)
-            .event(Absolute(PositionEvent(Positions::RX)))?
-            .min(-512)
-            .max(512)
-            .fuzz(0)
-            .flat(15)
-            .event(Absolute(PositionEvent(Positions::RY)))?
-            .min(-512)
-            .max(512)
-            .fuzz(0)
-            .flat(15)
-            .create()?;
+        let device = Device::new().ok_or("Failed to create evdev device!")?;
+        device.set_name("virtual gamepad (vpg)");
+        device.set_vendor_id(0x0bdc);
+        device.set_product_id(0x4853);
+        device.set_version(1);
+        device.set_bustype(BusType::BUS_VIRTUAL as u16);
 
-        Ok(GamePad { device, abs_val })
+        device.enable(&EventType::EV_KEY)?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_DPAD_UP))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_DPAD_DOWN))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_DPAD_LEFT))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_DPAD_RIGHT))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_NORTH))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_SOUTH))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_EAST))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_WEST))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_TL))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_TR))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_TL2))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_TR2))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_THUMBL))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_THUMBR))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_SELECT))?;
+        device.enable(&EventCode::EV_KEY(EV_KEY::BTN_START))?;
+
+        device.enable(&EventType::EV_ABS)?;
+        device.enable_event_code(
+            &EventCode::EV_ABS(EV_ABS::ABS_X),
+            Some(&AbsInfo {
+                value: 0,
+                minimum: -512,
+                maximum: 512,
+                fuzz: 0,
+                flat: 15,
+                resolution: 0,
+            }),
+        )?;
+        device.enable_event_code(
+            &EventCode::EV_ABS(EV_ABS::ABS_Y),
+            Some(&AbsInfo {
+                value: 0,
+                minimum: -512,
+                maximum: 512,
+                fuzz: 0,
+                flat: 15,
+                resolution: 0,
+            }),
+        )?;
+        device.enable_event_code(
+            &EventCode::EV_ABS(EV_ABS::ABS_RX),
+            Some(&AbsInfo {
+                value: 0,
+                minimum: -512,
+                maximum: 512,
+                fuzz: 0,
+                flat: 15,
+                resolution: 0,
+            }),
+        )?;
+        device.enable_event_code(
+            &EventCode::EV_ABS(EV_ABS::ABS_RY),
+            Some(&AbsInfo {
+                value: 0,
+                minimum: -512,
+                maximum: 512,
+                fuzz: 0,
+                flat: 15,
+                resolution: 0,
+            }),
+        )?;
+
+        device.enable(&EventType::EV_FF)?;
+        device.enable(&EventCode::EV_FF(EV_FF::FF_PERIODIC))?;
+
+        let input_device = UInputDevice::create_from_device(&device)?;
+
+        Ok(GamePad {
+            _device: device,
+            input_device,
+            abs_val,
+        })
     }
 
     pub fn control(&mut self, data: Control) -> Result<(), Box<dyn std::error::Error>> {
+        let time_val = TimeVal::try_from(std::time::SystemTime::now())?;
         match data {
             Control::Button(b) => {
                 let button_type =
                     ButtonType::from_i32(b.r#type).ok_or("The `button.type` is invalid!")?;
-                match button_type {
-                    ButtonType::A => self.apply_gamepad_key_state(&GamePadKeys::A, b.state)?,
-                    ButtonType::B => self.apply_gamepad_key_state(&GamePadKeys::B, b.state)?,
-                    ButtonType::X => self.apply_gamepad_key_state(&GamePadKeys::X, b.state)?,
-                    ButtonType::Y => self.apply_gamepad_key_state(&GamePadKeys::Y, b.state)?,
-                    ButtonType::Up => self.apply_dpad_key_state(&DPadKeys::Up, b.state)?,
-                    ButtonType::Down => self.apply_dpad_key_state(&DPadKeys::Down, b.state)?,
-                    ButtonType::Left => self.apply_dpad_key_state(&DPadKeys::Left, b.state)?,
-                    ButtonType::Right => self.apply_dpad_key_state(&DPadKeys::Right, b.state)?,
-                    ButtonType::TriggerLeft => {
-                        self.apply_gamepad_key_state(&GamePadKeys::TL, b.state)?
-                    }
-                    ButtonType::TriggerRight => {
-                        self.apply_gamepad_key_state(&GamePadKeys::TR, b.state)?
-                    }
-                    ButtonType::Trigger2Left => {
-                        self.apply_gamepad_key_state(&GamePadKeys::TL2, b.state)?
-                    }
-                    ButtonType::Trigger2Right => {
-                        self.apply_gamepad_key_state(&GamePadKeys::TR2, b.state)?
-                    }
-                    ButtonType::ThumbLeft => {
-                        self.apply_gamepad_key_state(&GamePadKeys::ThumbL, b.state)?
-                    }
-                    ButtonType::ThumbRight => {
-                        self.apply_gamepad_key_state(&GamePadKeys::ThumbR, b.state)?
-                    }
-                    ButtonType::Start => {
-                        self.apply_gamepad_key_state(&GamePadKeys::Start, b.state)?
-                    }
-                    ButtonType::Select => {
-                        self.apply_gamepad_key_state(&GamePadKeys::Select, b.state)?
-                    }
-                }
+                let button_state =
+                    ButtonState::from_i32(b.state).ok_or("The `button.state` is invalid!")?;
+
+                let ev_key = match button_type {
+                    ButtonType::A => EV_KEY::BTN_SOUTH,
+                    ButtonType::B => EV_KEY::BTN_EAST,
+                    ButtonType::X => EV_KEY::BTN_WEST,
+                    ButtonType::Y => EV_KEY::BTN_NORTH,
+                    ButtonType::Up => EV_KEY::BTN_DPAD_UP,
+                    ButtonType::Down => EV_KEY::BTN_DPAD_DOWN,
+                    ButtonType::Left => EV_KEY::BTN_DPAD_LEFT,
+                    ButtonType::Right => EV_KEY::BTN_DPAD_RIGHT,
+                    ButtonType::TriggerLeft => EV_KEY::BTN_TL,
+                    ButtonType::TriggerRight => EV_KEY::BTN_TR,
+                    ButtonType::Trigger2Left => EV_KEY::BTN_TL2,
+                    ButtonType::Trigger2Right => EV_KEY::BTN_TR2,
+                    ButtonType::ThumbLeft => EV_KEY::BTN_THUMBL,
+                    ButtonType::ThumbRight => EV_KEY::BTN_THUMBR,
+                    ButtonType::Start => EV_KEY::BTN_START,
+                    ButtonType::Select => EV_KEY::BTN_SELECT,
+                };
+                let value = match button_state {
+                    ButtonState::Pressed => 1,
+                    ButtonState::Released => 0,
+                };
+
+                let input_event = InputEvent::new(&time_val, &EventCode::EV_KEY(ev_key), value);
+                self.input_device.write_event(&input_event)?;
             }
             Control::ThumbStick(t) => {
                 let thumb_stick_type = ThumbStickType::from_i32(t.r#type)
                     .ok_or("The `thumb_stick.type` is invalid!")?;
-                match thumb_stick_type {
-                    ThumbStickType::LeftThumbStick => {
-                        self.device
-                            .position(&Positions::X, (t.x * self.abs_val) as i32)?;
-                        self.device
-                            .position(&Positions::Y, (t.y * self.abs_val) as i32)?;
-                        self.device.synchronize()?;
-                    }
-                    ThumbStickType::RightThumbStick => {
-                        self.device
-                            .position(&Positions::RX, (t.x * self.abs_val) as i32)?;
-                        self.device
-                            .position(&Positions::RY, (t.y * self.abs_val) as i32)?;
-                        self.device.synchronize()?;
-                    }
-                }
+
+                let (ev_abs_x, ev_abs_y) = match thumb_stick_type {
+                    ThumbStickType::LeftThumbStick => (EV_ABS::ABS_X, EV_ABS::ABS_Y),
+                    ThumbStickType::RightThumbStick => (EV_ABS::ABS_RX, EV_ABS::ABS_RY),
+                };
+
+                let input_event = InputEvent::new(
+                    &time_val,
+                    &EventCode::EV_ABS(ev_abs_x),
+                    (t.x * self.abs_val) as i32,
+                );
+                self.input_device.write_event(&input_event)?;
+
+                let input_event = InputEvent::new(
+                    &time_val,
+                    &EventCode::EV_ABS(ev_abs_y),
+                    (t.y * self.abs_val) as i32,
+                );
+                self.input_device.write_event(&input_event)?;
             }
-        }
+        };
 
-        Ok(())
-    }
-
-    fn apply_gamepad_key_state(
-        &mut self,
-        event: &GamePadKeys,
-        state: i32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let button_state = ButtonState::from_i32(state).ok_or("The `button.state` is invalid!")?;
-        match button_state {
-            ButtonState::Pressed => self.press_key(event)?,
-            ButtonState::Released => self.release_key(event)?,
-        }
-
-        Ok(())
-    }
-
-    fn apply_dpad_key_state(
-        &mut self,
-        event: &DPadKeys,
-        state: i32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let button_state = ButtonState::from_i32(state).ok_or("The `button.state` is invalid!")?;
-        match button_state {
-            ButtonState::Pressed => self.press_key(event)?,
-            ButtonState::Released => self.release_key(event)?,
-        }
-
-        Ok(())
-    }
-
-    fn press_key<T: Press>(&mut self, event: &T) -> Result<(), Box<dyn std::error::Error>> {
-        self.device.press(event)?;
-        self.device.synchronize()?;
-
-        Ok(())
-    }
-
-    fn release_key<T: Release>(&mut self, event: &T) -> Result<(), Box<dyn std::error::Error>> {
-        self.device.release(event)?;
-        self.device.synchronize()?;
+        let syn_event = InputEvent::new(&time_val, &EventCode::EV_SYN(EV_SYN::SYN_REPORT), 0);
+        self.input_device.write_event(&syn_event)?;
 
         Ok(())
     }
