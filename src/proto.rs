@@ -6,8 +6,13 @@ pub mod service_prelude {
 
     use vgp_device::{VgpDeviceButton, VgpDeviceInput, VgpDeviceThumbStick};
 
+    pub use super::force_feedback_uploaded::Type as ForceFeedbackType;
     pub use super::game_pad_server::{GamePad, GamePadServer};
-    pub use super::{CheckRequest, CheckResponse, InputData, OutputData};
+    pub use super::output_data::Feedback;
+    pub use super::{
+        CheckRequest, CheckResponse, ForceFeedbackErased, ForceFeedbackUploaded, InputData,
+        OutputData, RumbleForceFeedback,
+    };
 
     pub trait ToVgpDeviceInput {
         fn to_vgp_device_input(&self) -> Result<VgpDeviceInput, &'static str>;
@@ -64,9 +69,4 @@ pub mod service_prelude {
             }
         }
     }
-}
-
-pub mod io_prelude {
-    pub use super::input_data::Control;
-    pub use super::{ButtonState, ButtonType, ThumbStickType};
 }
