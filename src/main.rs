@@ -2,7 +2,6 @@ use futures_util::FutureExt;
 use simple_logger::SimpleLogger;
 use tonic::transport::Server;
 
-mod game_pad;
 mod game_pad_service;
 mod proto;
 

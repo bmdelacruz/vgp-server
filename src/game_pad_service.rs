@@ -1,7 +1,7 @@
 use futures_util::StreamExt;
 use tonic::{Request, Response, Status, Streaming};
+use vgp_device::{VgpDevice, VgpDeviceImpl};
 
-use crate::game_pad::GamePad as GamePadDevice;
 use crate::proto::service_prelude::*;
 
 #[derive(Debug, Default)]
@@ -29,25 +29,35 @@ impl GamePad for GamePadImpl {
 
         let mut stream = request.into_inner();
 
-        let mut game_pad = GamePadDevice::create(512f32).map_err(|_e| {
+        let mut game_pad = VgpDeviceImpl::new().map_err(|e| {
+            log::error!(
+                "An error occurred while trying to create game pad device. {}",
+                e
+            );
             Status::internal("An error occurred while trying to create game pad device.")
         })?;
 
         log::info!("Instantiated game pad for client ({:?}).", remote_addr);
 
         while let Some(input) = stream.next().await {
-            let data = input?.control.ok_or(Status::invalid_argument(
-                "The `control` argument is missing!",
-            ))?;
+            let input = input?
+                .to_vgp_device_input()
+                .map_err(|e| Status::invalid_argument(e))?;
 
             log::info!(
                 "Received game pad input data ({:?}) from client ({:?}).",
-                data,
-                remote_addr
+                input,
+                remote_addr,
             );
 
-            game_pad.control(data).map_err(|_e| {
-                Status::internal("An error occurred while trying to control the game pad device.")
+            game_pad.make_input(input).map_err(|e| {
+                log::error!(
+                    "An error occurred while acknowledging input for the game pad device. {}",
+                    e
+                );
+                Status::internal(
+                    "An error occurred while acknowledging input for the game pad device.",
+                )
             })?;
         }
 
