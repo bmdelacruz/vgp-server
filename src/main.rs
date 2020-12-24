@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 use futures_util::FutureExt;
 use simple_logger::SimpleLogger;

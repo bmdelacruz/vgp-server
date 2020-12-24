@@ -10,8 +10,8 @@ pub mod service_prelude {
     pub use super::game_pad_server::{GamePad, GamePadServer};
     pub use super::output_data::Feedback;
     pub use super::{
-        CheckRequest, CheckResponse, ForceFeedbackErased, ForceFeedbackUploaded, InputData,
-        OutputData, RumbleForceFeedback,
+        CheckRequest, CheckResponse, ForceFeedbackErased, ForceFeedbackPlayed,
+        ForceFeedbackStopped, ForceFeedbackUploaded, InputData, OutputData, RumbleForceFeedback,
     };
 
     pub trait ToVgpDeviceInput {

@@ -168,6 +168,32 @@ impl GamePad for GamePadImpl {
                             remote_addr
                         );
                     }
+                    VgpDeviceEvent::ForceFeedbackPlayed(ff_id) => {
+                        log::info!(
+                            "Playing force feedback effect ({}) on game pad device for client ({:?})",
+                            ff_id,
+                            remote_addr
+                        );
+
+                        yield OutputData {
+                            feedback: Some(Feedback::FfPlayed(ForceFeedbackPlayed {
+                                id: ff_id as i32,
+                            })),
+                        };
+                    }
+                    VgpDeviceEvent::ForceFeedbackStopped(ff_id) => {
+                        log::info!(
+                            "Stopping force feedback effect ({}) on game pad device for client ({:?})",
+                            ff_id,
+                            remote_addr
+                        );
+
+                        yield OutputData {
+                            feedback: Some(Feedback::FfStopped(ForceFeedbackStopped {
+                                id: ff_id as i32,
+                            })),
+                        };
+                    }
                     VgpDeviceEvent::ForceFeedbackUploaded(ff) => match ff.r#type {
                         VgpDeviceForceFeedbackType::Unsupported => {}
                         VgpDeviceForceFeedbackType::Rumble {
@@ -175,7 +201,7 @@ impl GamePad for GamePadImpl {
                             weak_magnitude,
                         } => {
                             log::info!(
-                                "Uploading rumble ff to game pad device for client ({:?}",
+                                "Uploading force feedback effect to game pad device for client ({:?})",
                                 remote_addr
                             );
 
@@ -195,7 +221,8 @@ impl GamePad for GamePadImpl {
                     },
                     VgpDeviceEvent::ForceFeedbackErased(ff_id) => {
                         log::info!(
-                            "Erasing rumble ff from game pad device for client ({:?}",
+                            "Erasing force feedback effect ({}) from game pad device for client ({:?})",
+                            ff_id,
                             remote_addr
                         );
 
