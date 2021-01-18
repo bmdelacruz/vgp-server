@@ -1,31 +1,16 @@
-use std::{net::SocketAddr, pin::Pin, sync::Arc};
+use std::{cell::RefCell, pin::Pin, sync::Arc};
 
 use futures_core::Stream;
 use futures_util::StreamExt;
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status, Streaming};
-use vgp_device::{VgpDevice, VgpDeviceEvent, VgpDeviceForceFeedbackType, VgpDeviceImpl};
+use vgp_device::Bus;
 
 use crate::proto::service_prelude::*;
 
-struct VgpDeviceWrapper {
-    device: VgpDeviceImpl,
-    should_stop_reading: bool,
-    should_stop_writing: bool,
-    remote_addr: Option<SocketAddr>,
+pub struct GamePadImpl {
+    bus: Arc<Mutex<RefCell<Bus>>>,
 }
-
-impl Drop for VgpDeviceWrapper {
-    fn drop(&mut self) {
-        log::info!(
-            "Destroying game pad that was made for client ({:?}).",
-            self.remote_addr
-        );
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct GamePadImpl;
 
 #[tonic::async_trait]
 impl GamePad for GamePadImpl {
@@ -46,202 +31,93 @@ impl GamePad for GamePadImpl {
         let remote_addr = request.remote_addr();
 
         log::info!(
-            "Client ({:?}) requested to instantiate game pad.",
+            "Client ({:?}) requested to instantiate game pad device.",
             remote_addr
         );
 
+        let mut device = {
+            let bus = self.bus.lock().await;
+            let mut bbus = bus.borrow_mut();
+            bbus.plug_in().unwrap()
+        };
+
         let mut stream = request.into_inner();
 
-        let device = VgpDeviceImpl::new().map_err(|e| {
-            log::error!(
-                "An error occurred while trying to create game pad device. {}",
-                e
-            );
-            Status::internal("An error occurred while trying to create game pad device.")
-        })?;
-
-        log::info!("Instantiated game pad for client ({:?}).", remote_addr);
-
-        let device_wrapper = VgpDeviceWrapper {
-            device,
-            remote_addr,
-            should_stop_reading: false,
-            should_stop_writing: false,
-        };
-        let device_wrapper = Arc::new(Mutex::new(device_wrapper));
-        let device_wrapper_clone = Arc::clone(&device_wrapper);
+        let (output_sender, output_receiver) =
+            tokio::sync::mpsc::unbounded_channel::<Result<OutputData, Status>>();
 
         tokio::spawn(async move {
-            while let Some(input) = stream.next().await {
-                let mut device_wrapper = device_wrapper.lock().await;
+            loop {
+                tokio::select! {
+                    input_data_opt = stream.next() => match input_data_opt {
+                        None => break,
+                        Some(input_data_res) => match input_data_res {
+                            Err(e) => {
+                                log::warn!(
+                                    "Input error for client ({:?}). {:?}",
+                                    remote_addr,
+                                    e
+                                );
 
-                if (device_wrapper.should_stop_writing) {
-                    log::info!(
-                        "Stopping receiving input data from client ({:?}). Read already stopped.",
-                        remote_addr,
-                    );
-                    break;
+                                break;
+                            }
+                            Ok(input_data) => match input_data.to_vgp_device_input() {
+                                Err(e) => {
+                                    log::warn!(
+                                        "Received an unrecognized input from client ({:?}). {}",
+                                        remote_addr,
+                                        e
+                                    );
+                                }
+                                Ok(input) => if let Err(e) = device.put_input(input) {
+                                    log::error!(
+                                        "An error occurred while placing input to game pad device for client ({:?}). {:?}",
+                                        remote_addr,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                    },
+                    output = device.get_output() => match output {
+                        Some(output) => {
+                            if let Err(e) = output_sender.send(Ok(OutputData {
+                                output: output.to_proto_output_data(),
+                            })) {
+                                log::warn!(
+                                    "Failed to send output to client ({:?}). {:?}",
+                                    remote_addr,
+                                    e
+                                );
+                            }
+                        }
+                        None => {
+                            log::info!(
+                                "No output from game pad device for client ({:?}).",
+                                remote_addr,
+                            );
+                        }
+                    },
                 }
+            }
 
-                let vgp_device_input = match input {
-                    Ok(input) => input.to_vgp_device_input(),
-                    Err(status) => {
-                        log::info!(
-                            "Stopping receiving input data from client ({:?}). Received status ({:?}).",
-                            remote_addr,
-                            status,
-                        );
-
-                        device_wrapper.should_stop_reading = true;
-
-                        break;
-                    }
-                };
-                let make_input_result = match vgp_device_input {
-                    Ok(input) => {
-                        log::info!(
-                            "Received game pad input data ({:?}) from client ({:?}).",
-                            input,
-                            remote_addr,
-                        );
-
-                        device_wrapper.device.make_input(input)
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Received an invalid game pad input data from client ({:?}). Error: {}",
-                            remote_addr,
-                            e
-                        );
-
-                        device_wrapper.should_stop_reading = true;
-
-                        break;
-                    }
-                };
-                match make_input_result {
-                    Ok(_) => {}
-                    Err(e) => {
-                        log::error!(
-                            "An error occurred while acknowledging input for the game pad device from client ({:?}). Error: {}",
-                            remote_addr, e
-                        );
-
-                        device_wrapper.should_stop_reading = true;
-
-                        break;
-                    }
-                }
+            if let Err(e) = device.unplug() {
+                log::error!(
+                    "An error occurred while unplugging the device for client ({:?}). {:?}",
+                    remote_addr,
+                    e
+                );
             }
         });
 
-        let output_stream = async_stream::try_stream! {
-            loop {
-                let mut device_wrapper = device_wrapper_clone.lock().await;
-
-                if (device_wrapper.should_stop_reading) {
-                    log::info!(
-                        "Stopping sending output data to client ({:?}). Write already stopped.",
-                        remote_addr,
-                    );
-                    break;
-                }
-
-                let event = match device_wrapper.device.get_next_event() {
-                    Ok(e) => e,
-                    Err(e) => {
-                        log::error!(
-                            "An error occurred while trying to read the game pad device for client ({:?}). Error: {}",
-                            remote_addr, e
-                        );
-
-                        device_wrapper.should_stop_writing = true;
-
-                        break;
-                    }
-                };
-                match event {
-                    VgpDeviceEvent::None => {}
-                    VgpDeviceEvent::Unsupported => {
-                        log::warn!(
-                            "Received an unsupported event from game pad device for client ({:?}",
-                            remote_addr
-                        );
-                    }
-                    VgpDeviceEvent::ForceFeedbackPlayed(ff_id) => {
-                        log::info!(
-                            "Playing force feedback effect ({}) on game pad device for client ({:?})",
-                            ff_id,
-                            remote_addr
-                        );
-
-                        yield OutputData {
-                            feedback: Some(Feedback::FfPlayed(ForceFeedbackPlayed {
-                                id: ff_id as i32,
-                            })),
-                        };
-                    }
-                    VgpDeviceEvent::ForceFeedbackStopped(ff_id) => {
-                        log::info!(
-                            "Stopping force feedback effect ({}) on game pad device for client ({:?})",
-                            ff_id,
-                            remote_addr
-                        );
-
-                        yield OutputData {
-                            feedback: Some(Feedback::FfStopped(ForceFeedbackStopped {
-                                id: ff_id as i32,
-                            })),
-                        };
-                    }
-                    VgpDeviceEvent::ForceFeedbackUploaded(ff) => match ff.r#type {
-                        VgpDeviceForceFeedbackType::Unsupported => {}
-                        VgpDeviceForceFeedbackType::Rumble {
-                            strong_magnitude,
-                            weak_magnitude,
-                        } => {
-                            log::info!(
-                                "Uploading force feedback effect to game pad device for client ({:?})",
-                                remote_addr
-                            );
-
-                            yield OutputData {
-                                feedback: Some(Feedback::FfUploaded(ForceFeedbackUploaded {
-                                    id: ff.id as i32,
-                                    direction: ff.direction as u32,
-                                    replay_length: ff.replay.length as u32,
-                                    replay_delay: ff.replay.delay as u32,
-                                    r#type: Some(ForceFeedbackType::Rumble(RumbleForceFeedback {
-                                        strong_magnitude: strong_magnitude as u32,
-                                        weak_magnitude: weak_magnitude as u32,
-                                    })),
-                                })),
-                            };
-                        }
-                    },
-                    VgpDeviceEvent::ForceFeedbackErased(ff_id) => {
-                        log::info!(
-                            "Erasing force feedback effect ({}) from game pad device for client ({:?})",
-                            ff_id,
-                            remote_addr
-                        );
-
-                        yield OutputData {
-                            feedback: Some(Feedback::FfErased(ForceFeedbackErased {
-                                id: ff_id as i32,
-                            })),
-                        };
-                    }
-                }
-            }
-        };
-
         Ok(Response::new(
-            Box::pin(output_stream) as Self::InstantiateStream
+            Box::pin(output_receiver) as Self::InstantiateStream
         ))
     }
 }
 
-pub fn create() -> GamePadServer<GamePadImpl> {
-    GamePadServer::new(GamePadImpl::default())
+pub fn create(bus: Bus) -> GamePadServer<GamePadImpl> {
+    GamePadServer::new(GamePadImpl {
+        bus: Arc::new(Mutex::new(RefCell::new(bus))),
+    })
 }

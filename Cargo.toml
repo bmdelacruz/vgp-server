@@ -9,11 +9,10 @@ log = "0.4.11"
 simple_logger = "1.11.0"
 tonic = "0.3"
 prost = "0.6"
-async-stream = "0.2"
 futures-core = "0.3"
 futures-util = "0.3"
 tokio = { version = "0.2", features = ["macros", "stream", "signal"] }
-vgp-device = { path = "../device" }
+vgp-device = { path = "../device", features = ["async"] }
 
 [build-dependencies]
 tonic-build = "0.3"
